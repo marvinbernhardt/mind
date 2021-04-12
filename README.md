@@ -12,6 +12,8 @@ $ ./mind.py
 Alternatively, define a setup in Python and run it there:
 
 ```Python
+from mind import mdrun
+
 L = 6.0
 box = np.array([L, L, L])
 x_ = np.linspace(0., box[0], num=6, endpoint=False)
