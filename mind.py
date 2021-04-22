@@ -148,9 +148,10 @@ def mdrun(md_setup):
     fy = np.zeros(N)
     fz = np.zeros(N)
 
-    traj = np.empty((md_setup['n_steps'], 3, N))
+    traj = np.empty((md_setup['n_steps'] // md_setup['save_traj_every_n_steps'], 3, N))
     traj.fill(np.nan)
-    energies = np.empty((md_setup['n_steps'], 4))  # T, KE, PE, unused
+    energies = np.empty((md_setup['n_steps'] // md_setup['save_energies_every_n_steps'],
+                         4))  # T, KE, PE, unused
     energies.fill(np.nan)
 
     for s in range(md_setup['n_steps']):
@@ -166,14 +167,16 @@ def mdrun(md_setup):
         if s % md_setup['print_every_n_steps'] == 0:
             TE = PE + KE
             output_thermo(s, PE, KE, TE, T)
+        s_traj = s // md_setup['save_traj_every_n_steps']
         if s % md_setup['save_traj_every_n_steps'] == 0:
-            traj[s, 0, :] = rx
-            traj[s, 1, :] = ry
-            traj[s, 2, :] = rz
+            traj[s_traj, 0, :] = rx
+            traj[s_traj, 1, :] = ry
+            traj[s_traj, 2, :] = rz
+        s_ener = s // md_setup['save_energies_every_n_steps']
         if s % md_setup['save_energies_every_n_steps'] == 0:
-            energies[s, 0] = T
-            energies[s, 1] = KE
-            energies[s, 2] = PE
+            energies[s_ener, 0] = T
+            energies[s_ener, 1] = KE
+            energies[s_ener, 2] = PE
     return traj, energies
 
 
