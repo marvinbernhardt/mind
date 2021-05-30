@@ -103,6 +103,15 @@ def potential_energy(N, box, cut_off, rx, ry, rz, fx, fy, fz):
 
 
 @njit
+def check_arrays_for_nans(*arrays):
+    """Check arrays for any NaN."""
+    for array in arrays:
+        if np.isnan(np.dot(array, array)):
+            return True
+    return False
+
+
+@njit
 def kinetic_energy(N, dt, vx, vy, vz, fx, fy, fz):
     """Calculate the kinetic energy and does second half of Velocity verlet."""
     e = 0.0
@@ -178,8 +187,14 @@ def mdrun(md_setup):
         wrap_into_box(N, md_setup['box'], rx, ry, rz)
         PE = potential_energy(N, md_setup['box'], md_setup['cut_off'], rx, ry, rz,
                               fx, fy, fz)
+        if check_arrays_for_nans(fx, fy, fz):
+            print("Some force is NaN. Are particles overlapping? Stopping.")
+            return None, None
         KE = kinetic_energy(N, md_setup['dt'], vx, vy, vz,
                             fx, fy, fz)
+        if check_arrays_for_nans(vx, vy, vz):
+            print("Some velocity is NaN. Time step too large? Stopping.")
+            return None, None
         berendsen_thermostat(N, md_setup['dt'], md_setup['T'], md_setup['tau'], KE,
                              vx, vy, vz)
         T = KE / (3/2 * N)
