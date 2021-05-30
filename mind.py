@@ -17,10 +17,10 @@
 
 import time
 import numpy as np
-from numba import jit
+from numba import njit
 
 
-@jit
+@njit
 def velocity_verlet(N, dt, rx, ry, rz, vx, vy, vz, fx, fy, fz):
     """Verloctiy verlet algorithm."""
     dt2 = dt * dt
@@ -34,7 +34,7 @@ def velocity_verlet(N, dt, rx, ry, rz, vx, vy, vz, fx, fy, fz):
         vz[i] += 0.5 * dt * fz[i]
 
 
-@jit
+@njit
 def wrap_into_box(N, box, rx, ry, rz):
     """Wrap the coordinates."""
     for i in range(N):
@@ -52,7 +52,7 @@ def wrap_into_box(N, box, rx, ry, rz):
             rz[i] -= box[2]
 
 
-@jit
+@njit
 def correct_distance_pbc(box, box_half, dx, dy, dz):
     if dx > box_half[0]:
         dx -= box[0]
@@ -69,7 +69,7 @@ def correct_distance_pbc(box, box_half, dx, dy, dz):
     return dx, dy, dz
 
 
-@jit
+@njit
 def potential_energy(N, box, cut_off, rx, ry, rz, fx, fy, fz):
     """Calculate the potential energy and forces."""
     fx.fill(0)
@@ -102,7 +102,7 @@ def potential_energy(N, box, cut_off, rx, ry, rz, fx, fy, fz):
     return e
 
 
-@jit
+@njit
 def kinetic_energy(N, dt, vx, vy, vz, fx, fy, fz):
     """Calculate the kinetic energy and does second half of Velocity verlet."""
     e = 0.0
@@ -115,7 +115,7 @@ def kinetic_energy(N, dt, vx, vy, vz, fx, fy, fz):
     return e
 
 
-@jit
+@njit
 def berendsen_thermostat(N, dt, T, tau, KE, vx, vy, vz):
     """Apply Berendsen thermostat."""
     lamb = np.sqrt(1 + dt / tau * (T / (2.0 * KE / 3.0 / N) - 1.0))
@@ -132,7 +132,26 @@ def output_thermo(s, PE, KE, TE, T):
 
 
 def mdrun(md_setup):
-    """main MD function"""
+    """Run molecular dynamics simulation.
+
+    Arguments:
+        md_setup: A dictionary with all data needed for the simulation.
+        Three of its entries can be Numpy arrays:
+        'box':     x, y, and z, length of the orthonormal box. Numpy array with
+                   shape (3).
+        'start_r': Start configuration, Numpy array with shape (3, N). N is the number
+                   of atoms.
+        'start_v': Start velocitiy, either None (all velocities zero) or Numpy array
+                   with shape (3, N).
+
+    Returns:
+        A tuple with two elements.
+        traj:     The trajectory, a Numpy array with shape (md_setup['n_steps']
+                  // md_setup['save_traj_every_n_steps'], 3, N).
+        energies: The calculated energies, a Numpy array with shape (md_setup['n_steps']
+                  // md_setup['save_energies_every_n_steps'], 4)).
+                  The four dimensions are T, E_kin, E_pot, - (unused).
+    """
     # unpack positions
     rx, ry, rz = np.array(md_setup['start_r']).copy()
     # unpack or initialize velocities
@@ -180,7 +199,7 @@ def mdrun(md_setup):
     return traj, energies
 
 
-if (__name__ == '__main__'):
+if __name__ == '__main__':
     # initialize a cubic box with particles on a grid
     L = 6.0
     box = np.array([L, L, L])
@@ -203,8 +222,8 @@ if (__name__ == '__main__'):
         'tau': 0.1,
         'T_damp': 1,
         'print_every_n_steps': 100,
-        'save_traj_every_n_steps': 1,
-        'save_energies_every_n_steps': 1,
+        'save_traj_every_n_steps': 10,
+        'save_energies_every_n_steps': 10,
     }
     # run md
     t_start = time.perf_counter()
