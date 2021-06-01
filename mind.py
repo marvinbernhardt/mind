@@ -190,8 +190,7 @@ def mdrun(md_setup):
         if check_arrays_for_nans(fx, fy, fz):
             print("Some force is NaN. Are particles overlapping? Stopping.")
             return None, None
-        KE = kinetic_energy(N, md_setup['dt'], vx, vy, vz,
-                            fx, fy, fz)
+        KE = kinetic_energy(N, md_setup['dt'], vx, vy, vz, fx, fy, fz)
         if check_arrays_for_nans(vx, vy, vz):
             print("Some velocity is NaN. Time step too large? Stopping.")
             return None, None
