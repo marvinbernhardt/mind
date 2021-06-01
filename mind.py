@@ -215,7 +215,7 @@ def mdrun(md_setup):
 
 if __name__ == '__main__':
     # initialize a cubic box with particles on a grid
-    L = 6.0
+    L = 6.33400315
     box = np.array([L, L, L])
     x_ = np.linspace(0., box[0], num=6, endpoint=False)
     y_ = np.linspace(0., box[1], num=6, endpoint=False)
