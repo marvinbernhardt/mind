@@ -47,4 +47,5 @@ def show_mdtraj_trajectory(traj, aspect_ratio=5):
     view.clear_representations()
     view.add_representation('ball+stick', aspectRatio=aspect_ratio)
     view.add_unitcell()
+    view.gui_style = 'ngl'
     return view
