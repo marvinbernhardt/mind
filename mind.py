@@ -50,6 +50,12 @@ def wrap_into_box(N, box, rx, ry, rz):
             rz[i] += box[2]
         if rz[i] > box[2]:
             rz[i] -= box[2]
+        # if the particle is still not in the box, it moved too fast
+        if (rx[i] < 0.0 or rx[i] > box[0]
+                or ry[i] < 0.0 or ry[i] > box[1]
+                or rz[i] < 0.0 or rz[i] > box[2]):
+            return False
+    return True
 
 
 @njit
@@ -184,7 +190,11 @@ def mdrun(md_setup):
 
     for s in range(md_setup['n_steps']):
         velocity_verlet(N, md_setup['dt'], rx, ry, rz, vx, vy, vz, fx, fy, fz)
-        wrap_into_box(N, md_setup['box'], rx, ry, rz)
+        wrap_successful = wrap_into_box(N, md_setup['box'], rx, ry, rz)
+        if not wrap_successful:
+            print("Some particles moved too fast and could not be wraped back into the "
+                  "box. Time step too large? Stopping.")
+            return None, None
         PE = potential_energy(N, md_setup['box'], md_setup['cut_off'], rx, ry, rz,
                               fx, fy, fz)
         if check_arrays_for_nans(fx, fy, fz):
@@ -196,20 +206,26 @@ def mdrun(md_setup):
             return None, None
         berendsen_thermostat(N, md_setup['dt'], md_setup['T'], md_setup['tau'], KE,
                              vx, vy, vz)
-        T = KE / (3/2 * N)
-        if s % md_setup['print_every_n_steps'] == 0:
+        # if we print or save energies this step -> calculate them
+        if (s % md_setup['print_every_n_steps'] == 0
+                or s % md_setup['save_energies_every_n_steps'] == 0):
             TE = PE + KE
+            T = KE / (3/2 * N)
+        # print output
+        if s % md_setup['print_every_n_steps'] == 0:
             output_thermo(s, PE, KE, TE, T)
-        s_traj = s // md_setup['save_traj_every_n_steps']
-        if s % md_setup['save_traj_every_n_steps'] == 0:
-            traj[s_traj, 0, :] = rx
-            traj[s_traj, 1, :] = ry
-            traj[s_traj, 2, :] = rz
-        s_ener = s // md_setup['save_energies_every_n_steps']
+        # save energies
         if s % md_setup['save_energies_every_n_steps'] == 0:
+            s_ener = s // md_setup['save_energies_every_n_steps']
             energies[s_ener, 0] = T
             energies[s_ener, 1] = KE
             energies[s_ener, 2] = PE
+        # save trajectory
+        if s % md_setup['save_traj_every_n_steps'] == 0:
+            s_traj = s // md_setup['save_traj_every_n_steps']
+            traj[s_traj, 0, :] = rx
+            traj[s_traj, 1, :] = ry
+            traj[s_traj, 2, :] = rz
     return traj, energies
 
 
