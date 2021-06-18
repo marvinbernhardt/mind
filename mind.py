@@ -77,7 +77,9 @@ def correct_distance_pbc(box, box_half, dx, dy, dz):
 
 @njit
 def potential_energy(N, box, cut_off, rx, ry, rz, fx, fy, fz):
-    """Calculate the potential energy and forces."""
+    """Calculate the potential energy and forces.
+
+    Also calculates and returns the virial."""
     fx.fill(0)
     fy.fill(0)
     fz.fill(0)
@@ -85,6 +87,8 @@ def potential_energy(N, box, cut_off, rx, ry, rz, fx, fy, fz):
 
     box_half = box / 2.0
     e = 0.0
+    virial = 0.0
+    # TODO: now calculate the virial!
     for i in range(N-1):
         for j in range(i+1, N):
             dx = rx[i] - rx[j]
@@ -105,7 +109,7 @@ def potential_energy(N, box, cut_off, rx, ry, rz, fx, fy, fz):
                 fy[j] -= dy * f / r2
                 fz[i] += dz * f / r2
                 fz[j] -= dz * f / r2
-    return e
+    return e, virial
 
 
 @njit
@@ -140,10 +144,22 @@ def berendsen_thermostat(N, dt, T, tau, KE, vx, vy, vz):
         vz[i] *= lamb
 
 
-def output_thermo(s, PE, KE, TE, T):
+@njit
+def berendsen_barostat(N, dt, p_0, tau_p, kappa, p, box, rx, ry, rz):
+    """Apply Berendsen barostat. Scale box and positions."""
+    # TODO: modify this function
+    raise Exception('Not implemented yet!')
+    mu = 1
+    box *= mu
+    rx *= mu
+    ry *= mu
+    rz *= mu
+
+
+def output_thermo(s, PE, KE, TE, T, p):
     """Print thermo information."""
-    print("Step: {:9d} PE = {:10.4f} | KE = {:10.4f} | TE  = {:10.4f} | T = {:8.3f}"
-          "".format(s, PE, KE, TE, T))
+    print(("Step: {:9d} PE = {:10.4f} | KE = {:10.4f} | TE  = {:10.4f} | T = {:8.3f} "
+           "| p = {:8.3f}").format(s, PE, KE, TE, T, p))
 
 
 def mdrun(md_setup):
@@ -181,7 +197,9 @@ def mdrun(md_setup):
     fx = np.zeros(N)
     fy = np.zeros(N)
     fz = np.zeros(N)
-
+    # copy box
+    box = np.copy(md_setup['box'])
+    # prepare traj and energies
     traj = np.empty((md_setup['n_steps'] // md_setup['save_traj_every_n_steps'], 3, N))
     traj.fill(np.nan)
     energies = np.empty((md_setup['n_steps'] // md_setup['save_energies_every_n_steps'],
@@ -190,22 +208,27 @@ def mdrun(md_setup):
 
     for s in range(md_setup['n_steps']):
         velocity_verlet(N, md_setup['dt'], rx, ry, rz, vx, vy, vz, fx, fy, fz)
-        wrap_successful = wrap_into_box(N, md_setup['box'], rx, ry, rz)
+        wrap_successful = wrap_into_box(N, box, rx, ry, rz)
         if not wrap_successful:
-            print("Some particles moved too fast and could not be wraped back into the "
-                  "box. Time step too large? Stopping.")
-            return None, None
-        PE = potential_energy(N, md_setup['box'], md_setup['cut_off'], rx, ry, rz,
-                              fx, fy, fz)
+            raise Exception(f"""
+At step {s}: Some particles moved too fast and could not be wraped back into the box.
+Time step too large? Stopping.""")
+        PE, VIR = potential_energy(N, box, md_setup['cut_off'], rx, ry, rz,
+                                   fx, fy, fz)
         if check_arrays_for_nans(fx, fy, fz):
-            print("Some force is NaN. Are particles overlapping? Stopping.")
-            return None, None
+            raise Exception(f"""
+At step {s}: Some force is NaN. Are particles overlapping? Stopping""")
         KE = kinetic_energy(N, md_setup['dt'], vx, vy, vz, fx, fy, fz)
         if check_arrays_for_nans(vx, vy, vz):
-            print("Some velocity is NaN. Time step too large? Stopping.")
-            return None, None
+            raise Exception(f"""
+At step {s}: Some velocity is NaN. Are particles overlapping? Stopping""")
         berendsen_thermostat(N, md_setup['dt'], md_setup['T'], md_setup['tau'], KE,
                              vx, vy, vz)
+        # TODO: calculate pressure here
+        p = np.nan
+        if 'barostat' in md_setup and md_setup['barostat'] == 'Berendsen':
+            berendsen_barostat(N, md_setup['dt'], md_setup['p'], md_setup['tau_p'],
+                               md_setup['kappa'], p, box, rx, ry, rz)
         # if we print or save energies this step -> calculate them
         if (s % md_setup['print_every_n_steps'] == 0
                 or s % md_setup['save_energies_every_n_steps'] == 0):
@@ -213,13 +236,14 @@ def mdrun(md_setup):
             T = KE / (3/2 * N)
         # print output
         if s % md_setup['print_every_n_steps'] == 0:
-            output_thermo(s, PE, KE, TE, T)
+            output_thermo(s, PE, KE, TE, T, p)
         # save energies
         if s % md_setup['save_energies_every_n_steps'] == 0:
             s_ener = s // md_setup['save_energies_every_n_steps']
             energies[s_ener, 0] = T
             energies[s_ener, 1] = KE
             energies[s_ener, 2] = PE
+            energies[s_ener, 3] = p
         # save trajectory
         if s % md_setup['save_traj_every_n_steps'] == 0:
             s_traj = s // md_setup['save_traj_every_n_steps']
@@ -245,15 +269,18 @@ if __name__ == '__main__':
         'box': box,
         'start_r': (rx, ry, rz),
         'start_v': None,
-        'dt': 0.001,
+        'dt': 0.002,
         'cut_off': 2.5,
         'n_steps': 10000,
         'T': 1.0,
         'tau': 0.1,
-        'T_damp': 1,
+        'barostat': None,  # or 'Berendsen'
+        'p': 1000,
+        'tau_p': 10.0,
+        'kappa': 1.0,
         'print_every_n_steps': 100,
-        'save_traj_every_n_steps': 10,
-        'save_energies_every_n_steps': 10,
+        'save_traj_every_n_steps': 100,
+        'save_energies_every_n_steps': 1,
     }
     # run md
     t_start = time.perf_counter()
