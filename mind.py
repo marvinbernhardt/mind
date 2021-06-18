@@ -253,17 +253,30 @@ At step {s}: Some velocity is NaN. Are particles overlapping? Stopping""")
     return traj, energies
 
 
-if __name__ == '__main__':
-    # initialize a cubic box with particles on a grid
-    L = 6.33400315
+def gen_bcc_crystal(num, rho):
+    """Initalize a box with bcc grid."""
+    N = num**3 * 2  # 2 atoms per unit cell
+    L = (N / rho)**(1/3)
     box = np.array([L, L, L])
-    x_ = np.linspace(0., box[0], num=6, endpoint=False)
-    y_ = np.linspace(0., box[1], num=6, endpoint=False)
-    z_ = np.linspace(0., box[2], num=6, endpoint=False)
-    x, y, z = np.meshgrid(x_, y_, z_, indexing='ij')
-    rx = x.flatten()
-    ry = y.flatten()
-    rz = z.flatten()
+    x_ = np.linspace(0., box[0], num=num, endpoint=False)
+    y_ = np.linspace(0., box[1], num=num, endpoint=False)
+    z_ = np.linspace(0., box[2], num=num, endpoint=False)
+
+    rx = []
+    ry = []
+    rz = []
+    for x in x_:
+        for y in y_:
+            for z in z_:
+                for offset in [(0, 0, 0), (L / num / 2, L / num / 2, L / num / 2)]:
+                    rx.append(x + offset[0])
+                    ry.append(y + offset[1])
+                    rz.append(z + offset[2])
+    return box, rx, ry, rz
+
+
+if __name__ == '__main__':
+    box, rx, ry, rz = gen_bcc_crystal(num=6, rho=0.85)
     # MD setup
     md_setup = {
         'box': box,
