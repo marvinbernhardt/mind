@@ -180,8 +180,8 @@ def mdrun(md_setup):
         traj:     The trajectory, a Numpy array with shape (md_setup['n_steps']
                   // md_setup['save_traj_every_n_steps'], 3, N).
         energies: The calculated energies, a Numpy array with shape (md_setup['n_steps']
-                  // md_setup['save_energies_every_n_steps'], 4)).
-                  The four dimensions are T, E_kin, E_pot, - (unused).
+                  // md_setup['save_energies_every_n_steps'], 5)).
+                  The four dimensions are T, E_kin, E_pot, p, and V.
     """
     # unpack positions
     rx, ry, rz = np.array(md_setup['start_r']).copy()
@@ -203,7 +203,7 @@ def mdrun(md_setup):
     traj = np.empty((md_setup['n_steps'] // md_setup['save_traj_every_n_steps'], 3, N))
     traj.fill(np.nan)
     energies = np.empty((md_setup['n_steps'] // md_setup['save_energies_every_n_steps'],
-                         4))  # T, KE, PE, unused
+                         5))  # T, KE, PE, p, V
     energies.fill(np.nan)
 
     for s in range(md_setup['n_steps']):
@@ -224,7 +224,8 @@ At step {s}: Some force is NaN. Are particles overlapping? Stopping""")
 At step {s}: Some velocity is NaN. Are particles overlapping? Stopping""")
         berendsen_thermostat(N, md_setup['dt'], md_setup['T'], md_setup['tau'], KE,
                              vx, vy, vz)
-        # TODO: calculate pressure here
+        # TODO: calculate volume and pressure here
+        V = np.nan
         p = np.nan
         if 'barostat' in md_setup and md_setup['barostat'] == 'Berendsen':
             berendsen_barostat(N, md_setup['dt'], md_setup['p'], md_setup['tau_p'],
@@ -244,6 +245,7 @@ At step {s}: Some velocity is NaN. Are particles overlapping? Stopping""")
             energies[s_ener, 1] = KE
             energies[s_ener, 2] = PE
             energies[s_ener, 3] = p
+            energies[s_ener, 4] = V
         # save trajectory
         if s % md_setup['save_traj_every_n_steps'] == 0:
             s_traj = s // md_setup['save_traj_every_n_steps']
