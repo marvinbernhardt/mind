@@ -290,9 +290,9 @@ if __name__ == '__main__':
         'T': 1.0,
         'tau': 0.1,
         'barostat': None,  # or 'Berendsen'
-        'p': 1000,
-        'tau_p': 10.0,
-        'kappa': 1.0,
+        'p': 1,
+        'tau_p': 1.0,
+        'kappa': 0.01,
         'print_every_n_steps': 100,
         'save_traj_every_n_steps': 100,
         'save_energies_every_n_steps': 1,
