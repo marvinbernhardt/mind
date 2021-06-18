@@ -156,10 +156,10 @@ def berendsen_barostat(N, dt, p_0, tau_p, kappa, p, box, rx, ry, rz):
     rz *= mu
 
 
-def output_thermo(s, PE, KE, TE, T, p):
+def output_thermo(s, PE, KE, TE, T, p, V):
     """Print thermo information."""
     print(("Step: {:9d} PE = {:10.4f} | KE = {:10.4f} | TE  = {:10.4f} | T = {:8.3f} "
-           "| p = {:8.3f}").format(s, PE, KE, TE, T, p))
+           "| p = {:8.3f} | V = {:8.3f}").format(s, PE, KE, TE, T, p, V))
 
 
 def mdrun(md_setup):
@@ -237,7 +237,7 @@ At step {s}: Some velocity is NaN. Are particles overlapping? Stopping""")
             T = KE / (3/2 * N)
         # print output
         if s % md_setup['print_every_n_steps'] == 0:
-            output_thermo(s, PE, KE, TE, T, p)
+            output_thermo(s, PE, KE, TE, T, p, V)
         # save energies
         if s % md_setup['save_energies_every_n_steps'] == 0:
             s_ener = s // md_setup['save_energies_every_n_steps']
