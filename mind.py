@@ -300,6 +300,6 @@ if __name__ == '__main__':
     # run md
     t_start = time.perf_counter()
     traj, energies = mdrun(md_setup)
-    np.savez_compressed('md_out.npz', traj=traj, energies=energies)
+    np.savez_compressed('md_out.npz', traj=traj, box=md_setup['box'], energies=energies)
     t_end = time.perf_counter()
     print("Total looping time = {:.2f} seconds.".format(t_end - t_start))
