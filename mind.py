@@ -269,7 +269,7 @@ if __name__ == '__main__':
         'n_steps': 10000,
         'T': 1.0,
         'tau': 0.1,
-        'print_every_n_steps': 100,
+        'print_every_n_steps': 1000,
         'save_traj_every_n_steps': 100,
         'save_energies_every_n_steps': 1,
     }
