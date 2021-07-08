@@ -77,9 +77,7 @@ def correct_distance_pbc(box, box_half, dx, dy, dz):
 
 @njit
 def potential_energy(N, box, cut_off, rx, ry, rz, fx, fy, fz):
-    """Calculate the potential energy and forces.
-
-    Also calculates and returns the virial."""
+    """Calculate the potential energy and forces."""
     fx.fill(0)
     fy.fill(0)
     fz.fill(0)
@@ -87,8 +85,6 @@ def potential_energy(N, box, cut_off, rx, ry, rz, fx, fy, fz):
 
     box_half = box / 2.0
     e = 0.0
-    virial = 0.0
-    # TODO: now calculate the virial!
     for i in range(N-1):
         for j in range(i+1, N):
             dx = rx[i] - rx[j]
@@ -109,7 +105,7 @@ def potential_energy(N, box, cut_off, rx, ry, rz, fx, fy, fz):
                 fy[j] -= dy * f / r2
                 fz[i] += dz * f / r2
                 fz[j] -= dz * f / r2
-    return e, virial
+    return e
 
 
 @njit
@@ -201,8 +197,8 @@ def mdrun(md_setup):
             raise Exception(f"""
 At step {s}: Some particles moved too fast and could not be wraped back into the box.
 Time step too large? Stopping.""")
-        PE, VIR = potential_energy(N, box, md_setup['cut_off'], rx, ry, rz,
-                                   fx, fy, fz)
+        PE = potential_energy(N, box, md_setup['cut_off'], rx, ry, rz,
+                              fx, fy, fz)
         if check_arrays_for_nans(fx, fy, fz):
             raise Exception(f"""
 At step {s}: Some force is NaN. Are particles overlapping? Stopping""")
