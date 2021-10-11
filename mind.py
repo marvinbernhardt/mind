@@ -76,7 +76,7 @@ def correct_distance_pbc(box, box_half, dx, dy, dz):
 
 
 @njit
-def potential_energy(N, box, cut_off, rx, ry, rz, fx, fy, fz):
+def potential_energy_LJ(N, box, cut_off, rx, ry, rz, fx, fy, fz):
     """Calculate the potential energy and forces."""
     fx.fill(0)
     fy.fill(0)
@@ -105,6 +105,41 @@ def potential_energy(N, box, cut_off, rx, ry, rz, fx, fy, fz):
                 fy[j] -= dy * f / r2
                 fz[i] += dz * f / r2
                 fz[j] -= dz * f / r2
+    return e
+
+
+@njit
+def potential_energy_table(N, box, cut_off, rx, ry, rz, fx, fy, fz, r2_u_table,
+                           fr_table):
+    """Calculate the potential energy and forces using tabulated potential which is
+    linearly interpolated in r².
+    """
+    fx.fill(0)
+    fy.fill(0)
+    fz.fill(0)
+    cut_off_squared = cut_off**2
+
+    box_half = box / 2.0
+    e = 0.0
+    for i in range(N-1):
+        for j in range(i+1, N):
+            dx = rx[i] - rx[j]
+            dy = ry[i] - ry[j]
+            dz = rz[i] - rz[j]
+
+            dx, dy, dz = correct_distance_pbc(box, box_half, dx, dy, dz)
+
+            r2 = dx * dx + dy * dy + dz * dz
+
+            if r2 < cut_off_squared:
+                e += np.interp(r2, r2_u_table[0], r2_u_table[1])
+                fr = np.interp(r2, r2_u_table[0], fr_table)
+                fx[i] += dx * fr / r2
+                fx[j] -= dx * fr / r2
+                fy[i] += dy * fr / r2
+                fy[j] -= dy * fr / r2
+                fz[i] += dz * fr / r2
+                fz[j] -= dz * fr / r2
     return e
 
 
@@ -158,6 +193,8 @@ def mdrun(md_setup):
                    of atoms.
         'start_v': Start velocitiy, either None (all velocities zero) or Numpy array
                    with shape (3, N).
+        'r_u_table': A 2D numpy array defining the pair potential. First dimension is r,
+                     second is u(r).
 
     Returns:
         A tuple with two elements.
@@ -167,6 +204,18 @@ def mdrun(md_setup):
                   // md_setup['save_energies_every_n_steps'], 5)).
                   The four dimensions are T, E_kin, and E_pot.
     """
+    # unpack table
+    if 'r_u_table' in md_setup:
+        r2_u_table = md_setup['r_u_table'].copy()
+        # get force from potential
+        fr_table = -np.array([0, *list(1/2 * (np.diff(r2_u_table[1, 1:])
+                                              + np.diff(r2_u_table[1, :-1]))), 0])
+        fr_table /= r2_u_table[0, 1] - r2_u_table[0, 0]  # Δr
+        fr_table *= r2_u_table[0]  # multiply now by r, so later we divide by r²
+        r2_u_table[0] *= r2_u_table[0]  # put r² in first dimension
+    else:
+        r2_u_table = None
+        fr_table = None
     # unpack positions
     rx, ry, rz = np.array(md_setup['start_r']).copy()
     # unpack or initialize velocities
@@ -197,8 +246,13 @@ def mdrun(md_setup):
             raise Exception(f"""
 At step {s}: Some particles moved too fast and could not be wraped back into the box.
 Time step too large? Stopping.""")
-        PE = potential_energy(N, box, md_setup['cut_off'], rx, ry, rz,
-                              fx, fy, fz)
+        # if no table, do LJ, else tabulated
+        if r2_u_table is None:
+            PE = potential_energy_LJ(N, box, md_setup['cut_off'], rx, ry, rz,
+                                     fx, fy, fz)
+        else:
+            PE = potential_energy_table(N, box, md_setup['cut_off'], rx, ry, rz,
+                                        fx, fy, fz, r2_u_table, fr_table)
         if check_arrays_for_nans(fx, fy, fz):
             raise Exception(f"""
 At step {s}: Some force is NaN. Are particles overlapping? Stopping""")
