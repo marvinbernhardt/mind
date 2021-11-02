@@ -109,8 +109,8 @@ def potential_energy_LJ(N, box, cut_off, rx, ry, rz, fx, fy, fz):
 
 
 @njit
-def potential_energy_table(N, box, cut_off, rx, ry, rz, fx, fy, fz, r2_u_table,
-                           fr_table):
+def potential_energy_table(N, box, cut_off, rx, ry, rz, fx, fy, fz, u_table,
+                           fr_table, min_r, Delta_r):
     """Calculate the potential energy and forces using tabulated potential which is
     linearly interpolated in r².
     """
@@ -120,6 +120,7 @@ def potential_energy_table(N, box, cut_off, rx, ry, rz, fx, fy, fz, r2_u_table,
     cut_off_squared = cut_off**2
 
     box_half = box / 2.0
+    Delta_r_half = Delta_r / 2
     e = 0.0
     for i in range(N-1):
         for j in range(i+1, N):
@@ -130,10 +131,12 @@ def potential_energy_table(N, box, cut_off, rx, ry, rz, fx, fy, fz, r2_u_table,
             dx, dy, dz = correct_distance_pbc(box, box_half, dx, dy, dz)
 
             r2 = dx * dx + dy * dy + dz * dz
+            r = np.sqrt(r2)
 
             if r2 < cut_off_squared:
-                e += np.interp(r2, r2_u_table[0], r2_u_table[1])
-                fr = np.interp(r2, r2_u_table[0], fr_table)
+                index = int((r - min_r + Delta_r_half) // Delta_r)
+                e += u_table[index]
+                fr = fr_table[index]
                 fx[i] += dx * fr / r2
                 fx[j] -= dx * fr / r2
                 fy[i] += dy * fr / r2
@@ -206,15 +209,18 @@ def mdrun(md_setup):
     """
     # unpack table
     if 'r_u_table' in md_setup:
-        r2_u_table = md_setup['r_u_table'].copy()
+        r_table = md_setup['r_u_table'].copy()[0, :]
+        u_table = md_setup['r_u_table'].copy()[1, :]
+        Delta_r = r_table[1] - r_table[0]
+        min_r = np.min(r_table)
         # get force from potential
-        fr_table = -np.array([0, *list(1/2 * (np.diff(r2_u_table[1, 1:])
-                                              + np.diff(r2_u_table[1, :-1]))), 0])
-        fr_table /= r2_u_table[0, 1] - r2_u_table[0, 0]  # Δr
-        fr_table *= r2_u_table[0]  # multiply now by r, so later we divide by r²
-        r2_u_table[0] *= r2_u_table[0]  # put r² in first dimension
+        fr_table = -np.array([0, *list(1/2 * (np.diff(u_table[1:])
+                                              + np.diff(u_table[:-1]))), 0])
+        fr_table /= Delta_r  # /Δr
+        # multiply now by r, so later we divide by r²
+        fr_table *= r_table
     else:
-        r2_u_table = None
+        u_table = None
         fr_table = None
     # unpack positions
     rx, ry, rz = np.array(md_setup['start_r']).copy()
@@ -247,12 +253,12 @@ def mdrun(md_setup):
 At step {s}: Some particles moved too fast and could not be wraped back into the box.
 Time step too large? Stopping.""")
         # if no table, do LJ, else tabulated
-        if r2_u_table is None:
+        if u_table is None:
             PE = potential_energy_LJ(N, box, md_setup['cut_off'], rx, ry, rz,
                                      fx, fy, fz)
         else:
             PE = potential_energy_table(N, box, md_setup['cut_off'], rx, ry, rz,
-                                        fx, fy, fz, r2_u_table, fr_table)
+                                        fx, fy, fz, u_table, fr_table, min_r, Delta_r)
         if check_arrays_for_nans(fx, fy, fz):
             raise Exception(f"""
 At step {s}: Some force is NaN. Are particles overlapping? Stopping""")
