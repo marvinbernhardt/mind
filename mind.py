@@ -21,17 +21,17 @@ from numba import njit
 
 
 @njit
-def velocity_verlet(N, dt, rx, ry, rz, vx, vy, vz, fx, fy, fz):
+def velocity_verlet(N, dt, m, rx, ry, rz, vx, vy, vz, fx, fy, fz):
     """Verloctiy verlet algorithm."""
     dt2 = dt * dt
     for i in range(N):
-        rx[i] += vx[i] * dt + 0.5 * dt2 * fx[i]
-        ry[i] += vy[i] * dt + 0.5 * dt2 * fy[i]
-        rz[i] += vz[i] * dt + 0.5 * dt2 * fz[i]
+        rx[i] += vx[i] * dt + 0.5 * dt2 * fx[i] / m
+        ry[i] += vy[i] * dt + 0.5 * dt2 * fy[i] / m
+        rz[i] += vz[i] * dt + 0.5 * dt2 * fz[i] / m
 
-        vx[i] += 0.5 * dt * fx[i]
-        vy[i] += 0.5 * dt * fy[i]
-        vz[i] += 0.5 * dt * fz[i]
+        vx[i] += 0.5 * dt * fx[i] / m
+        vy[i] += 0.5 * dt * fy[i] / m
+        vz[i] += 0.5 * dt * fz[i] / m
 
 
 @njit
@@ -156,22 +156,22 @@ def check_arrays_for_nans(*arrays):
 
 
 @njit
-def kinetic_energy(N, dt, vx, vy, vz, fx, fy, fz):
+def kinetic_energy(N, dt, m, vx, vy, vz, fx, fy, fz):
     """Calculate the kinetic energy and does second half of Velocity verlet."""
     e = 0.0
     for i in range(N):
-        vx[i] += 0.5 * dt * fx[i]
-        vy[i] += 0.5 * dt * fy[i]
-        vz[i] += 0.5 * dt * fz[i]
-        e += vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i]
+        vx[i] += 0.5 * dt * fx[i] / m
+        vy[i] += 0.5 * dt * fy[i] / m
+        vz[i] += 0.5 * dt * fz[i] / m
+        e += m * (vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i])
     e *= 0.5
     return e
 
 
 @njit
-def berendsen_thermostat(N, dt, T, tau, KE, vx, vy, vz):
+def berendsen_thermostat(N, dt, T, tau, KE, k_B, vx, vy, vz):
     """Apply Berendsen thermostat."""
-    lamb = np.sqrt(1 + dt / tau * (T / (2.0 * KE / 3.0 / N) - 1.0))
+    lamb = np.sqrt(1 + dt / tau * (T / (2.0 * KE / 3.0 / N / k_B) - 1.0))
     for i in range(N):
         vx[i] *= lamb
         vy[i] *= lamb
@@ -219,6 +219,10 @@ def mdrun(md_setup):
         fr_table /= Delta_r  # /Δr
         # multiply now by r, so later we divide by r²
         fr_table *= r_table
+        if r_table[-1] < md_setup['cut_off']:
+            raise Exception("the last r of r_u_table has be larger than cut-off")
+        if not np.allclose(r_table[-1], md_setup['cut_off']):
+            print("Warning: the last r of r_u_table is not equal to cut_off")
     else:
         u_table = None
         fr_table = None
@@ -244,9 +248,19 @@ def mdrun(md_setup):
     energies = np.empty((md_setup['n_steps'] // md_setup['save_energies_every_n_steps'],
                          4))  # T, KE, PE, unused
     energies.fill(np.nan)
+    # determine k_B
+    if 'k_B' in md_setup:
+        k_B = float(md_setup['k_B'])
+    else:
+        k_B = 1.0
+    # determine mass
+    if 'm' in md_setup:
+        m = float(md_setup['m'])
+    else:
+        m = 1.0
 
     for s in range(md_setup['n_steps']):
-        velocity_verlet(N, md_setup['dt'], rx, ry, rz, vx, vy, vz, fx, fy, fz)
+        velocity_verlet(N, md_setup['dt'], m, rx, ry, rz, vx, vy, vz, fx, fy, fz)
         wrap_successful = wrap_into_box(N, box, rx, ry, rz)
         if not wrap_successful:
             raise Exception(f"""
@@ -262,17 +276,17 @@ Time step too large? Stopping.""")
         if check_arrays_for_nans(fx, fy, fz):
             raise Exception(f"""
 At step {s}: Some force is NaN. Are particles overlapping? Stopping""")
-        KE = kinetic_energy(N, md_setup['dt'], vx, vy, vz, fx, fy, fz)
+        KE = kinetic_energy(N, md_setup['dt'], m, vx, vy, vz, fx, fy, fz)
         if check_arrays_for_nans(vx, vy, vz):
             raise Exception(f"""
 At step {s}: Some velocity is NaN. Are particles overlapping? Stopping""")
-        berendsen_thermostat(N, md_setup['dt'], md_setup['T'], md_setup['tau'], KE,
+        berendsen_thermostat(N, md_setup['dt'], md_setup['T'], md_setup['tau'], KE, k_B,
                              vx, vy, vz)
         # if we print or save energies this step -> calculate them
         if (s % md_setup['print_every_n_steps'] == 0
                 or s % md_setup['save_energies_every_n_steps'] == 0):
             TE = PE + KE
-            T = KE / (3/2 * N)
+            T = KE / (k_B * 3/2 * N)
         # print output
         if s % md_setup['print_every_n_steps'] == 0:
             output_thermo(s, PE, KE, TE, T)
